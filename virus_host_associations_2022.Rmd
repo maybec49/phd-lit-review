@@ -1,0 +1,517 @@
+---
+title: "viruses_and_hosts_2022"
+author: "R. M. Grimwood"
+date: "28/06/2022"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r Libaray Imports, message=FALSE, warning=FALSE}
+
+library(data.table)
+library(dplyr)
+
+library(ggbiplot)
+library(ggord)
+library(ggVennDiagram)
+
+library(tidyverse)
+library(tidyr)
+library(tibble)
+
+library(reshape2)
+
+library(splitstackshape)
+library(stringr)
+
+library(vegan)
+
+```
+
+## Import and Cleanup Data
+
+```{r Data Cleanup, warning=FALSE}
+
+# Read in csv file of raw data -------------------------------------------------
+data = read.csv(file='virus_host_dataset_2022.csv', header=TRUE) # edited chinese firebelly newt (delete if causing problems)
+
+# Extract virus orders and families --------------------------------------------
+
+# Extract virus orders
+order = str_extract(data$virus.lineage, "\\w+virales *?")
+
+# Extract virus families
+family = str_extract(data$virus.lineage, "\\w+dae *?")
+
+# Update abolished Leviviridae to Fiersviridae and Luteoviridae to Tombusviridae
+family = gsub("Leviviridae", "Fiersviridae", family)
+family = gsub("Luteoviridae", "Tombusviridae", family)
+
+# Add order and familiy as new columns
+taxonomy = data.table("virus.order" =  order, "virus.family" = family) 
+data2 = data
+data2 = add_column(data2, taxonomy, .after = "virus.lineage") 
+
+# Resulting dataset: data2
+
+
+# Extract host orders and families ---------------------------------------------
+
+# Extract some host taxonomy info.
+first.name = word(data2$host.name, 1)
+
+group = word(data2$host.lineage, 1)
+group = str_remove(group, ";")
+
+host1 = word(data2$host.lineage, -2)
+host1 = str_remove(host1, ";")
+
+host2 = word(data2$host.lineage, -1)
+
+taxonomy = data.table("first.name" = first.name, "host.type" = group, "host.taxon1" =  host1, "host.taxon2" = host2) 
+data3 = data2
+data3 = add_column(data3, taxonomy, .after = "host.lineage") 
+
+# Resulting dataset: data3
+
+
+# Filter out na hosts and viruses ----------------------------------------------
+
+# Filter rows with unwanted species and unclassified viruses/hosts
+
+# Filter out entries with no virus order and family
+filtered = data3[!(is.na(data3$virus.family) & is.na(data3$virus.order)),]
+
+# Filter out entries with no relevant host info.
+filtered = filtered[!(filtered$host.lineage == "" | is.na(filtered$host.type) | filtered$host.name == "root"),]
+
+# Set working dataset
+virushostdb = filtered # 16,734
+
+# Resulting dataset = virushostdb
+
+```
+
+## Grouping Host Types
+
+```{r Host Grouping}
+
+# Subset host groups -----------------------------------------------------------
+
+# Add host.type2
+virushostdb2 = virushostdb
+virushostdb2 = add_column(virushostdb2, "host.type2" = NA, .after = "host.type")
+
+# Eukaryota = 11,214
+virushostdb2[grep("Mammalia", virushostdb2$host.lineage),]$host.type2 = "Mammalia"  # 4,302
+virushostdb2[grep("Aves", virushostdb2$host.lineage),]$host.type2 = "Aves" # 482
+virushostdb2[grep("Squamata", virushostdb2$host.lineage),]$host.type2 = "Squamata" # 83
+virushostdb2[grep("Crocod", virushostdb2$host.lineage),]$host.type2 = "Crocod" # 5
+virushostdb2[grep("Amphibia", virushostdb2$host.lineage),]$host.type2 = "Amphibia" # 65
+virushostdb2[grep("Cyclostomata", virushostdb2$host.lineage),]$host.type2 = "Cyclostomata" # 11
+virushostdb2[grep("Testudine", virushostdb2$host.lineage),]$host.type2 = "Testudine" # 26
+virushostdb2[grep("Actinopterygii", virushostdb2$host.lineage),]$host.type2 = "Actinopterygii" # 299
+virushostdb2[grep("Chondrichthyes", virushostdb2$host.lineage),]$host.type2 = "Chondrichthyes" # 36
+virushostdb2[grep("Dipnomorpha", virushostdb2$host.lineage),]$host.type2 = "Dipnomorpha" # 4 
+
+virushostdb2[grep("Sar;", virushostdb2$host.lineage),]$host.type2 = "Sar" # 56
+virushostdb2[grep("Rhodophyta", virushostdb2$host.lineage),]$host.type2 = "Rhodophyta" # 11
+virushostdb2[grep("Fungi", virushostdb2$host.lineage),]$host.type2 = "Fungi" # 312
+virushostdb2[grep("Viridiplantae", virushostdb2$host.lineage),]$host.type2 = "Plant" # 4,077
+virushostdb2[grep("Amoebozoa", virushostdb2$host.lineage),]$host.type2 = "Amoebozoa" # 28
+virushostdb2[grep("Haptista", virushostdb2$host.lineage),]$host.type2 = "Haptista" # 6
+virushostdb2[grep("Metamonada", virushostdb2$host.lineage),]$host.type2 = "Metamonada" # 7
+virushostdb2[grep("Discoba", virushostdb2$host.lineage),]$host.type2 = "Discoba" # 10
+virushostdb2[grep("Picozoa", virushostdb2$host.lineage),]$host.type2 = "Picozoa" # 1
+
+virushostdb2[grep("Arthropod", virushostdb2$host.lineage),]$host.type2 = "Arthropod" # 1,320
+virushostdb2[grep("Mollusca", virushostdb2$host.lineage),]$host.type2 = "Mollusca" # 56
+
+# Bacteria = 5,298
+virushostdb2[grep("Bacteria", virushostdb2$host.lineage),]$host.type2 = "Bacteria"
+
+# Archaea = 106
+virushostdb2[grep("Archaea", virushostdb2$host.lineage),]$host.type2 = "Archaea" # 106
+
+# Resulting dataset: virushostdb2
+
+```
+
+## Subsetting Data for Analysis
+
+```{r Subsetting}
+
+# Subset species animals group -------------------------------------------------
+
+# Condense db into Virus family/order, host first name, host type (more detailed, e.g. host.type2: mammal, plant > eukary.)
+dbsummary = virushostdb2[c("virus.name", "virus.family", "virus.order", "host.name", "first.name", "host.type", "host.type2")]
+
+# Remove entries with no host type
+dbsummary = dbsummary[!is.na(dbsummary$host.type2),] # 16,603
+
+length(table(dbsummary$first.name)) # 1,916
+
+# Resulting dataset: dbsummary
+
+```
+
+## Analysis of Virus-Host Associations
+
+```{r Reformatting}
+
+# Prepare data for further analysis -------------------------------------------
+
+# Take database summary and remove picozoa
+data = dbsummary
+data = data[-11638,]
+
+# Merge family and order, when family is NA
+virus_taxa_merged = coalesce(data$virus.family, data$virus.order)
+data$virus.taxa = virus_taxa_merged
+
+# Take only rows we're interested in : hosts, virus taxa, and host grouping(s)
+db = data[,5:8]
+
+# Condense host groups in db --------------------------------------------------
+
+db_condensed = db
+
+# Fishes
+db_condensed[grep("Actinopterygii", db_condensed$host.type2),]$host.type2 = "Fishes"
+db_condensed[grep("Chondrichthyes", db_condensed$host.type2),]$host.type2 = "Fishes" 
+db_condensed[grep("Cyclostomata", db_condensed$host.type2),]$host.type2 = "Fishes"
+db_condensed[grep("Dipnomorpha", db_condensed$host.type2),]$host.type2 = "Fishes"
+
+# Cold blooded vertebrates
+db_condensed[grep("Squamata", db_condensed$host.type2),]$host.type2 = "Cold.blooded.vertebrates"
+db_condensed[grep("Crocod", db_condensed$host.type2),]$host.type2 = "Cold.blooded.vertebrates"
+db_condensed[grep("Testudine", db_condensed$host.type2),]$host.type2 = "Cold.blooded.vertebrates"
+db_condensed[grep("Amphibia", db_condensed$host.type2),]$host.type2 = "Cold.blooded.vertebrates"
+
+# Invertebrates
+db_condensed[grep("Arthropod", db_condensed$host.type2),]$host.type2 = "Invertebrate"
+db_condensed[grep("Mollusca", db_condensed$host.type2),]$host.type2 = "Invertebrate"
+
+# Other Eukaryota
+db_condensed[grep("Fungi", db_condensed$host.type2),]$host.type2 = "Other.eukaryota"
+db_condensed[grep("Discoba", db_condensed$host.type2),]$host.type2 = "Other.eukaryota"
+db_condensed[grep("Haptista", db_condensed$host.type2),]$host.type2 = "Other.eukaryota"
+db_condensed[grep("Metamonada", db_condensed$host.type2),]$host.type2 = "Other.eukaryota"
+db_condensed[grep("Sar", db_condensed$host.type2),]$host.type2 = "Other.eukaryota"
+
+# -----------------------------------------------------------------------------
+
+# Summarise hosts and their viruses
+pca_data = dcast(na.omit(melt(db[,c(1,4)], id.vars = 'first.name')), first.name ~ value, fun.aggregate = length) # 1,915 hosts, 185 viruses (since abolished families were overwritten)
+
+# Order data to get unique first names and extract host type (2) to add to pca_data
+ordered_data = data[order(data$first.name),]
+ordered_data2 = ordered_data[!duplicated(ordered_data$first.name),]
+
+# Add host type (2) to pca data and reorder
+pca_data$host.type = ordered_data2$host.type2
+pca_data = pca_data[,c(1, 187, 2:186)]
+
+# Generate P/A data
+pa_data = pca_data[,3:187]
+pa_data[pa_data>0] = 1
+pa_data = cbind(pca_data[,1:2], pa_data)
+
+# Create the same tables with condensed host information:
+
+# Condensed hosts and their viruses
+c.ordered_data = db_condensed[order(db_condensed$first.name),]
+c.ordered_data2 = c.ordered_data[!duplicated(c.ordered_data$first.name),]
+
+condensed_pca_data = dcast(na.omit(melt(db_condensed[,c(1,4)], id.vars = 'first.name')), first.name ~ value, fun.aggregate = length)
+condensed_pca_data$host.type = c.ordered_data2$host.type2
+condensed_pca_data = condensed_pca_data[,c(1, 187, 2:186)]
+
+# Generate condensed P/A data
+condensed_pa_data = condensed_pca_data[,3:187]
+condensed_pa_data[condensed_pa_data>0] = 1
+condensed_pa_data = cbind(condensed_pca_data[,1:2], condensed_pa_data)
+
+```
+
+```{r Ordination Analysis}
+
+# Summaries/bar plots ----------------------------------------------------------
+
+# Bar plot of groups and their viruses
+host_virus_summary = table(db$virus.taxa, db$host.type2)
+#View(host_virus_summary)
+
+ggplot(as.data.frame(host_virus_summary), aes(y=Freq, x=Var2)) + 
+  geom_bar(stat="identity") +
+  theme(axis.text.x=element_text(angle=90,vjust=0.5)) + coord_flip()
+
+# Bar plot of condensed host groups and their viruses
+host_virus_summary_condensed = table(db_condensed$virus.taxa, db_condensed$host.type2)
+#View(host_virus_summary_condensed)
+
+ggplot(as.data.frame(host_virus_summary_condensed), aes(y=Freq, x=Var2)) + 
+  geom_bar(stat="identity") +
+  theme(axis.text.x=element_text(angle=90,vjust=0.5)) + coord_flip()
+
+
+ # PCA plot with PA data -------------------------------------------------------
+
+# PCA with condensed hosts
+c.host.pca = prcomp(condensed_pa_data[,3:187], center=TRUE, scale.=FALSE) # No scale as PA data?
+summary(c.host.pca)
+
+ggbiplot(c.host.pca, choices = c(1,2), groups=condensed_pa_data$host.type, var.axes=FALSE) +
+  geom_point(aes(colour = condensed_pa_data$host.type, alpha=0.2)) +
+  scale_color_manual(values=c("#5A5156","#E4E1E3","#F6222E","#FE00FA", "#16FF32","#3283FE","#FEAF16","#B00068","#1CFFCE","#90AD1C","#FBE426"))
+
+# MDS/PCoA Ordination plots ----------------------------------------------------
+
+# MDS with plants
+c.pa_dist = dist(condensed_pa_data[,-1:-2], method = "binary") 
+mds = cmdscale(c.pa_dist, eig = TRUE, k = 2) 
+
+for_plot = data.frame(mds$points, group = gsub("\\d$", "", condensed_pa_data$host.type))
+
+ggplot(for_plot) +
+  geom_point(aes(x = X1,y = X2, color = group, alpha = 0.3)) + scale_color_manual(values=c("#5A5156","#E4E1E3","#F6222E","#FE00FA", "#16FF32","#3283FE","#FEAF16","#B00068","#1CFFCE","#90AD1C","#FBE426"))
+
+# MDS without plants
+c.no_plants = condensed_pa_data[!(condensed_pa_data$host.type=="Plant"),]
+c.pa_dist = dist(c.no_plants[,-1:-2], method = "binary") 
+mds = cmdscale(c.pa_dist, eig = TRUE, k = 2) 
+
+for_plot = data.frame(mds$points, group = gsub("\\d$", "", c.no_plants$host.type))
+
+ggplot(for_plot) +
+  geom_point(aes(x = X1,y = X2, color = group, alpha = 0.3)) + scale_color_manual(values=c("#5A5156","#E4E1E3","#F6222E","#FE00FA", "#FBE426","#3283FE","#FEAF16","#B00068","#1CFFCE","#90AD1C","#FBE426"))
+
+```
+
+```{r ICTV data}
+
+ICTV = read.csv(file='ICTV_stats_2022.csv', header=TRUE)
+
+totals = ICTV$Total.species+ICTV$Total.unassigned
+ICTV = cbind(ICTV, totals)
+
+mICTV = melt(ICTV, "Year")
+tICTV = t(ICTV)
+
+ICTV_chopped = ICTV[,-2]
+ICTV_chopped = ICTV_chopped[,-4]
+mICTV_chopped = melt(ICTV_chopped, "Year")
+
+ggplot(mICTV_chopped, aes(fill=variable, y=value, x=Year)) + 
+  geom_bar(stat="identity") +
+  theme(axis.text.x=element_text(angle=90,vjust=0.5)) +
+  scale_x_continuous(labels = mICTV_chopped$Year, breaks = mICTV_chopped$Year)
+
+ggplot(data=ICTV, aes(x=Year, y=Total.families)) +
+  geom_bar(stat="identity") +
+  theme(axis.text.x=element_text(angle=90,vjust=0.5)) +
+  scale_x_continuous(labels = mICTV_chopped$Year, breaks = mICTV_chopped$Year)
+
+```
+
+```{r Strandedness}
+
+# Import data on the virus fams/orders, strandedness, and ICTV status
+virus_taxa_summary = read.csv(file='virus_taxa_2022.csv', header=TRUE)
+
+# Breakdown of virus family strandedness in db
+ggplot(data=virus_taxa_summary, aes(x=Type, y=Freq)) +
+  geom_bar(stat="identity", aes(color=as.factor(Type))) + theme(axis.text.x=element_text(angle=90,vjust=0.5))
+
+# Without colour
+ggplot(data=virus_taxa_summary, aes(x=Type, y=Freq)) +
+  geom_bar(stat="identity") + theme(axis.text.x=element_text(angle=90,vjust=0.5))
+
+# View(virus_taxa_summary[virus_taxa_summary$Type=="dsDNA",])
+sum(virus_taxa_summary$Freq)
+
+# 5 (of 185) families in this db not ICTV rectified
+sum(virus_taxa_summary$ICTV==FALSE)
+
+# Summary of Types and their freq
+vts = aggregate(Freq ~ Type, data=virus_taxa_summary, FUN=sum)
+vts$perc = vts$Freq/sum(vts$Freq)
+sum(vts$Freq)
+
+# Pie chart of strandedness
+ggplot(vts, aes(x="", y=perc*100, fill=Type)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0)
+
+
+# Genome breakdown by host type: compare to past (2014) breakdowns: https://doi.org/10.3389/fmicb.2014.00194
+virus_type_by_host = db_condensed
+virus_type_by_host$genome = virus_taxa_summary$Type[match(virus_type_by_host$virus.taxa, virus_taxa_summary$Var1)]
+View(table(virus_type_by_host$host.type2))
+
+# Archaea genomes
+archaea_genomes =  virus_type_by_host[virus_type_by_host$host.type2 == "Archaea",]
+archaea_genomes = table(archaea_genomes$genome)
+archaea_genomes = as.data.frame(archaea_genomes)
+
+archaea_genomes$perc = archaea_genomes$Freq/sum(archaea_genomes$Freq)
+sum(archaea_genomes$perc)
+
+ggplot(archaea_genomes, aes(x="", y=perc*100, fill=Var1)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0)
+
+# Plant: plant and red algae
+plant_genomes =  virus_type_by_host[virus_type_by_host$host.type2 == c("Plant", "Rhodophyta"),]
+plant_genomes = table(plant_genomes$genome)
+plant_genomes = as.data.frame(plant_genomes)
+
+plant_genomes$perc = plant_genomes$Freq/sum(plant_genomes$Freq)
+sum(plant_genomes$perc)
+
+ggplot(plant_genomes, aes(x="", y=perc*100, fill=Var1)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0)
+
+# Warm-blooded vertebra: mammalia and birds
+warmblooded_genomes =  virus_type_by_host[virus_type_by_host$host.type2 == c("Aves", "Mammalia"),]
+warmblooded_genomes = table(warmblooded_genomes$genome)
+warmblooded_genomes = as.data.frame(warmblooded_genomes)
+
+warmblooded_genomes$perc = warmblooded_genomes$Freq/sum(warmblooded_genomes$Freq)
+sum(warmblooded_genomes$perc)
+
+ggplot(warmblooded_genomes, aes(x="", y=perc*100, fill=Var1)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0)
+
+# Cold-blooded vertebra: fish and other cold-blooded
+coldblooded_genomes =  virus_type_by_host[virus_type_by_host$host.type2 == c("Fish", "Cold.blooded.vertebrates"),]
+coldblooded_genomes = table(coldblooded_genomes$genome)
+coldblooded_genomes = as.data.frame(coldblooded_genomes)
+
+coldblooded_genomes$perc = coldblooded_genomes$Freq/sum(coldblooded_genomes$Freq)
+sum(coldblooded_genomes$perc)
+
+ggplot(coldblooded_genomes, aes(x="", y=perc*100, fill=Var1)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0)
+
+# Inverts: mollusca and arthropods
+invert_genomes =  virus_type_by_host[virus_type_by_host$host.type2 == "Invertebrate",]
+invert_genomes = table(invert_genomes$genome)
+invert_genomes = as.data.frame(invert_genomes)
+
+invert_genomes$perc = invert_genomes$Freq/sum(invert_genomes$Freq)
+sum(invert_genomes$perc)
+
+ggplot(invert_genomes, aes(x="", y=perc*100, fill=Var1)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0)
+
+# Amoeba
+amoeba_genomes =  virus_type_by_host[virus_type_by_host$host.type2 == "Amoebozoa",]
+amoeba_genomes = table(amoeba_genomes$genome)
+amoeba_genomes = as.data.frame(amoeba_genomes)
+
+amoeba_genomes$perc = amoeba_genomes$Freq/sum(amoeba_genomes$Freq)
+sum(amoeba_genomes$perc)
+
+ggplot(amoeba_genomes, aes(x="", y=perc*100, fill=Var1)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0)
+
+# Other eukaryota
+othereuk_genomes =  virus_type_by_host[virus_type_by_host$host.type2 == "Other.eukaryota",]
+othereuk_genomes = table(othereuk_genomes$genome)
+othereuk_genomes = as.data.frame(othereuk_genomes)
+
+othereuk_genomes$perc = othereuk_genomes$Freq/sum(othereuk_genomes$Freq)
+sum(othereuk_genomes$perc)
+
+ggplot(othereuk_genomes, aes(x="", y=perc*100, fill=Var1)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0)
+
+# Bacteria genomes
+bacteria_genomes =  virus_type_by_host[virus_type_by_host$host.type2 == "Bacteria",]
+bacteria_genomes = table(bacteria_genomes$genome)
+bacteria_genomes = as.data.frame(bacteria_genomes)
+
+bacteria_genomes$perc = bacteria_genomes$Freq/sum(bacteria_genomes$Freq)
+sum(bacteria_genomes$perc)
+
+ggplot(bacteria_genomes, aes(x="", y=perc*100, fill=Var1)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0)
+
+
+
+```
+
+```{r Heatmaps}
+
+# Heatmap of present viral families --------------------------------------------
+
+# Using condensed host types
+heatmap = dcast(na.omit(melt(db_condensed[,c(3,4)], id.vars = 'host.type2')), host.type2 ~ value, fun.aggregate = length)
+
+# Order baltimore classes by type and re-order heatmap
+baltimore = virus_taxa_summary[order(virus_taxa_summary$Type),]
+balt_classes = baltimore$Var1
+ordered_heatmap = heatmap[,-1]
+ordered_heatmap = ordered_heatmap[,dput(as.character(balt_classes))]
+ordered_heatmap = cbind(heatmap[,1], ordered_heatmap)
+
+# Remove unwanted hosts
+ordered_heatmap = ordered_heatmap[(!(ordered_heatmap[,1] == "Bacteria")),]
+ordered_heatmap = ordered_heatmap[(!(ordered_heatmap[,1] == "Rhodophyta")),]
+ordered_heatmap = ordered_heatmap[(!(ordered_heatmap[,1] == "Archaea")),]
+ordered_heatmap = ordered_heatmap[(!(ordered_heatmap[,1] == "Amoebozoa")),]
+# Delete virus families with 0s
+ordered_heatmap = ordered_heatmap[, (colSums(ordered_heatmap != 0) > 0)]
+colnames(ordered_heatmap)[1] = "host.type2"
+
+# Host-condensed heatmap
+heatmap_condensed = db_condensed[(!(db_condensed$host.type=="Bacteria")),]
+heatmap_condensed = heatmap_condensed[!(heatmap_condensed$host.type2=="Rhodophyta"),]
+heatmap_condensed = heatmap_condensed[!(heatmap_condensed$host.type2=="Archaea"),]
+heatmap_condensed = heatmap_condensed[!(heatmap_condensed$host.type2=="Amoebozoa"),]
+heatmap_condensed = dcast(na.omit(melt(heatmap_condensed[,c(3,4)], id.vars = 'host.type2')), host.type2 ~ value, fun.aggregate = length)
+
+# Heatmap clustered by baltimore
+ordered_heatmap$host.type2 = factor(ordered_heatmap$host.type2, levels=unique(ordered_heatmap$host.type2)) # reorder so ggplot doesn't uncluster
+ggplot(melt(ordered_heatmap), aes(host.type2, variable, fill = host.type2, alpha = value)) + 
+  geom_tile(colour = "gray50") +
+  scale_alpha_identity(guide = "none") +
+  coord_equal(expand = 0) +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+# Unclustered by Baltimore classes
+ggplot(melt(heatmap_condensed), aes(host.type2, variable, fill = host.type2, alpha = value)) + 
+  geom_tile(colour = "gray50") +
+  scale_alpha_identity(guide = "none") +
+  coord_equal(expand = 0) +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+# All groups
+ggplot(melt(heatmap), aes(host.type2, variable, fill = host.type2, alpha = value)) + 
+  geom_tile(colour = "gray50") +
+  scale_alpha_identity(guide = "none") +
+  coord_equal(expand = 0) +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
